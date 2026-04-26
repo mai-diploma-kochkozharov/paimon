@@ -145,6 +145,48 @@ public class LanceUtils {
             if (uriString.startsWith("traceable:/")) {
                 converted = new Path(uriString.replace("traceable:/", "file:/"));
             }
+        } else if ("s3a".equals(schema)) {
+            // Lance native object_store знает только scheme `s3://` (Hadoop's
+            // s3a:// — отдельная Java-абстракция, в Rust-стороне её нет).
+            // Перезаписываем s3a → s3 и подкладываем endpoint/credentials в
+            // storageOptions так, чтобы object_store нашёл бакет напрямую,
+            // не через Hadoop FS-layer.
+            // Источник credentials: env-vars (как делает paimon-vortex), либо
+            // hadoopOptions если HadoopFileIO. Env имеет приоритет — Vortex
+            // и Lance шарят один кластер, эти env уже выставлены в start.yml.
+            String endpoint = System.getenv("AWS_ENDPOINT");
+            String accessKey = System.getenv("AWS_ACCESS_KEY_ID");
+            String secretKey = System.getenv("AWS_SECRET_ACCESS_KEY");
+            String sessionToken = System.getenv("AWS_SESSION_TOKEN");
+            // Fallback на hadoopOptions если env не задан
+            if (endpoint == null && originOptions.containsKey("fs.s3a.endpoint")) {
+                endpoint = originOptions.get("fs.s3a.endpoint");
+            }
+            if (accessKey == null && originOptions.containsKey("fs.s3a.access.key")) {
+                accessKey = originOptions.get("fs.s3a.access.key");
+            }
+            if (secretKey == null && originOptions.containsKey("fs.s3a.secret.key")) {
+                secretKey = originOptions.get("fs.s3a.secret.key");
+            }
+            if (endpoint != null) {
+                storageOptions.put(STORAGE_OPTION_ENDPOINT, endpoint);
+            }
+            if (accessKey != null) {
+                storageOptions.put(STORAGE_OPTION_ACCESS_KEY_ID, accessKey);
+            }
+            if (secretKey != null) {
+                storageOptions.put(STORAGE_OPTION_SECRET_ACCESS_KEY, secretKey);
+            }
+            if (sessionToken != null) {
+                storageOptions.put(STORAGE_OPTION_SESSION_TOKEN, sessionToken);
+            }
+            // Path-style на minio/Ozone (виртуальный hosted style требует DNS
+            // под bucket-name, чего у нас нет на cluster-internal S3).
+            storageOptions.put(STORAGE_OPTION_VIRTUAL_HOSTED_STYLE, "false");
+            // HTTP endpoint для Ozone; vortex это разрешает env-var-ом
+            // AWS_ALLOW_HTTP, для lance же object_store читает из storageOptions:
+            storageOptions.put("allow_http", "true");
+            converted = new Path(uri.toString().replace("s3a://", "s3://"));
         } else if ("oss".equals(schema)) {
             assert originOptions.containsKey(FS_OSS_ENDPOINT);
             assert originOptions.containsKey(FS_OSS_ACCESS_KEY_ID);
