@@ -82,11 +82,11 @@ public class VortexRecordsWriter implements BundleFormatWriter {
         }
     }
 
+    private static final double VORTEX_COMPRESSION_RATIO = 5.0;
+
     @Override
     public boolean reachTargetSize(boolean suggestedCheck, long targetSize) {
-        // Note: bytesWritten tracks Arrow IPC serialized bytes, not the actual Vortex file size
-        // (which may differ due to Vortex's own compression/encoding).
-        return suggestedCheck && (bytesWritten > targetSize);
+        return suggestedCheck && (bytesWritten > targetSize * VORTEX_COMPRESSION_RATIO);
     }
 
     @Override
